@@ -1,0 +1,1 @@
+AAGAACAAAA[1,1,1]
