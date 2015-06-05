@@ -18,7 +18,7 @@ while ($_ = <PAT>)
     open(TMP,">>$ARGV[4]");
     print TMP "=====================\n$_\n\n";
     close(TMP);
-    system "./scan_for_matches tmp.pat.$$ < $ARGV[1] >> $ARGV[4]";
+    system "./src/scan_for_matches tmp.pat.$$ < $ARGV[1] >> $ARGV[4]";
 }
 close(PAT);
 
@@ -35,7 +35,7 @@ while ($_ = <PAT>)
     open(TMP,">>$ARGV[4]");
     print TMP "=====================\n$_\n\n";
     close(TMP);
-    system "./scan_for_matches -p tmp.pat.$$ < $ARGV[3] >> $ARGV[4]";
+    system "./src/scan_for_matches -p tmp.pat.$$ < $ARGV[3] >> $ARGV[4]";
 }
 close(PAT);
 
