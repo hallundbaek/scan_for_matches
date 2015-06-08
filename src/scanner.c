@@ -1064,8 +1064,8 @@ rev_compl_data (rule_set, data, len, result)
   }
 }
 
-#define Stack(N) {stack[nxtent].p1=one_data; stack[nxtent].p2=two_data; \
-                  stack[nxtent].n1=one_len;  stack[nxtent].n2=two_len;   \
+#define Stack(N) {stack[nxtent].p1=pat_data; stack[nxtent].p2=seq_data; \
+                  stack[nxtent].n1=pat_len;  stack[nxtent].n2=seq_len;   \
                   stack[nxtent].mis=max_mis; stack[nxtent].ins=max_ins; \
                   stack[nxtent].del=max_del; stack[nxtent++].next_choice=N;}
 
