@@ -1691,7 +1691,7 @@ int *max_before_length, *max_after_length , *index;
             ((current->info.sim.len - k) > exact_length )){
           *index = tmp_index;
           *max_before_length = tmp_max_length;
-          exact_length = current->info.sim.len;
+          exact_length = current->info.sim.len - k;
           good_choice = 1;
         }
         break;

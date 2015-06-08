@@ -393,19 +393,31 @@ length_of_match (pu)
   return pu->mlen;
 }
 
+/**
+ * @brief Will try to match a pattern to a sequence.
+ *
+ * @param pu The first pattern unit of the pattern.
+ * @param start The pointer first base of the sequence.
+ * @param end The pointer last base of the sequence.
+ * @param hits Will hold the reported hits upon execution
+ * @param first Whether or not it is the first match.
+ * @param backtrack_punit The backtracking pattern unit.
+ *
+ * @return How many pattern units matched.
+ */
 int
-pattern_match (pu, start, end, hits, first, BR1)
-     punit_t **BR1;
+pattern_match (pu, start, end, hits, first, backtrack_punit)
+     punit_t **backtrack_punit;
      punit_t *pu;
      char *start, *end;
      char *hits[];
      int first;
 {
-  punit_t *BR;      // only static variable here (I think)
+  punit_t *tmp_backtrack_punit;
   int i, j;
   char *revhits[MAX_PUNITS];
-  punit_t *CR;
-  char *SR, *ER;
+  punit_t *current;
+  char *seq_start, *seq_end;
   char *last;
   char *p1, *p2, *p3;
   int *pv1, *pv3;
@@ -420,26 +432,26 @@ pattern_match (pu, start, end, hits, first, BR1)
   try = 1;
   success = backtrack = backtrack_again = leave = try_again = 0;
 
-  BR = *BR1;
-  SR = start; // First character of data.
-  ER = end;   // Last character of data.
+  tmp_backtrack_punit = *backtrack_punit;
+  seq_start = start; // First character of data.
+  seq_end = end;   // Last character of data.
 
   if (!first){
     backtrack = 1;
     try = 0;
   }
 
-  CR = pu;
+  current = pu;
   int count = 0;
   while(!leave){
     //TRY segment
     if(try){
       try_again = 0;
 
-      switch (CR->type) {
+      switch (current->type) {
         case MATCH_START:
-          if (SR == start) {
-            CR->hit = SR;
+          if (seq_start == start) {
+            current->hit = seq_start;
             success = 1;
             break;
           }
@@ -447,8 +459,8 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case MATCH_END:
-          if (SR == end + 1) {
-            CR->hit = SR;
+          if (seq_start == end + 1) {
+            current->hit = seq_start;
             success = 1;
             break;
           }
@@ -456,38 +468,38 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case ANY_PUNIT:
-          last = ER;
-          if ((last > SR) && CR->anchored)
-            last = SR;
-          while (SR <= last) {
-            i = *SR;
-            if (i >= 'A' && i <= 'Z' && ((1 << (i - 'A')) & CR->info.any.code_matrix)) {
+          last = seq_end;
+          if ((last > seq_start) && current->anchored)
+            last = seq_start;
+          while (seq_start <= last) {
+            i = *seq_start;
+            if (i >= 'A' && i <= 'Z' && ((1 << (i - 'A')) & current->info.any.code_matrix)) {
               break;
             }
-            SR++;
+            seq_start++;
           }
-          if (SR > last) {
+          if (seq_start > last) {
             backtrack = 1;
             break;
           }
           else {
-            if ((CR->hit = SR) < last) {
-              CR->BR = BR;
-              BR = CR;
+            if ((current->hit = seq_start) < last) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
             }
-            SR++;
+            seq_start++;
             success = 1;
             break;
           }
           break;
 
         case LLIM_PUNIT:
-          for (ln = 0, i = CR->info.llim.llim_vec[0]; i;) {
-            pu1 = names[CR->info.llim.llim_vec[i--]];
+          for (ln = 0, i = current->info.llim.llim_vec[0]; i;) {
+            pu1 = names[current->info.llim.llim_vec[i--]];
             ln += pu1->mlen;
           }
-          if (ln < CR->info.llim.bound) {
-            CR->hit = SR;
+          if (ln < current->info.llim.bound) {
+            current->hit = seq_start;
             success = 1;
             break;
           }
@@ -495,14 +507,14 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case RANGE_PUNIT:
-          if ((SR + (i = CR->info.range.min - 1)) <= ER) {
-            CR->hit = SR;
-            SR += i + 1;
-            if (((SR <= ER) && (CR->info.range.width)) ||
-                        (!CR->anchored && (SR <= ER))) {
-              CR->BR = BR;
-              BR = CR;
-              CR->info.range.nxt = CR->info.range.min + 1;
+          if ((seq_start + (i = current->info.range.min - 1)) <= seq_end) {
+            current->hit = seq_start;
+            seq_start += i + 1;
+            if (((seq_start <= seq_end) && (current->info.range.width)) ||
+                        (!current->anchored && (seq_start <= seq_end))) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
+              current->info.range.nxt = current->info.range.min + 1;
             }
             success = 1;
             break;
@@ -514,66 +526,66 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case EXACT_PUNIT:
-          last = ER + 1 - CR->info.exact.len;
-          if ((last > SR) && CR->anchored)
-            last = SR;
-          p1 = CR->info.exact.code;
-          ln = CR->info.exact.len - 1;
-          while (SR <= last) {
-            if (Matches (*SR, *p1)) {
-              p2 = SR + 1;
+          last = seq_end + 1 - current->info.exact.len;
+          if ((last > seq_start) && current->anchored)
+            last = seq_start;
+          p1 = current->info.exact.code;
+          ln = current->info.exact.len - 1;
+          while (seq_start <= last) {
+            if (Matches (*seq_start, *p1)) {
+              p2 = seq_start + 1;
               p3 = p1 + 1;
               for (i = ln; i && Matches (*p2, *p3); i--, p3++, p2++);
               if (!i)
                 break;
             }
-            SR++;
+            seq_start++;
           }
-          if (SR > last) {
+          if (seq_start > last) {
             backtrack = 1;
             break;
           }
           else {
-            if ((CR->hit = SR) < last) {
-              CR->BR = BR;
-              BR = CR;
+            if ((current->hit = seq_start) < last) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
             }
-            SR += CR->info.exact.len;
+            seq_start += current->info.exact.len;
             success = 1;
             break;
           }
           break;
 
         case COMPL_PUNIT:
-          pu1 = names[CR->info.compl.of];
+          pu1 = names[current->info.compl.of];
           p1 = pu1->hit;
           ln = pu1->mlen;
-          if ((CR->info.compl.rule_set != -1) || CR->info.compl.ins ||
-                           CR->info.compl.del || CR->info.compl.mis) {
+          if ((current->info.compl.rule_set != -1) || current->info.compl.ins ||
+                           current->info.compl.del || current->info.compl.mis) {
             if (i = loose_match ((unsigned char *) p1, ln,
-               (unsigned char *) SR, ER + 1 - SR,
-               CR->info.compl.ins,
-               CR->info.compl.del,
-               CR->info.compl.mis,
-               CR->info.compl.rule_set, &j, 1,
-               &(CR->info.compl.ins_left))) {
+               (unsigned char *) seq_start, seq_end + 1 - seq_start,
+               current->info.compl.ins,
+               current->info.compl.del,
+               current->info.compl.mis,
+               current->info.compl.rule_set, &j, 1,
+               &(current->info.compl.ins_left))) {
               i--;
-              CR->hit = SR;
-              if ((CR->hit = SR) < last) {
-                CR->BR = BR;
-                BR = CR;
+              current->hit = seq_start;
+              if ((current->hit = seq_start) < last) {
+                current->BR = tmp_backtrack_punit;
+                tmp_backtrack_punit = current;
               }
-              SR += i;
+              seq_start += i;
               success = 1;
               break;
             }
           }
-          else if (ER - SR >= ln - 1) {
-            CR->hit = SR;
+          else if (seq_end - seq_start >= ln - 1) {
+            current->hit = seq_start;
             p1 = pu1->hit + (ln - 1);
             while (ln--) {
               //* FIX: 4/25/92: complement cannot match ambiguous char *
-              if (!KnownChar ((*p1) & 15) || (((*(p1--) >> 4) & 15) != (*(SR++) & 15))){
+              if (!KnownChar ((*p1) & 15) || (((*(p1--) >> 4) & 15) != (*(seq_start++) & 15))){
                 backtrack = 1;
                 break;
               }
@@ -587,28 +599,28 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case REPEAT_PUNIT:
-          pu1 = names[CR->info.repeat.of];
+          pu1 = names[current->info.repeat.of];
           p1 = pu1->hit;
 
           if (!(ln = pu1->mlen)) {
-            CR->hit = SR;
+            current->hit = seq_start;
             success = 1;
             break;
           }
 
           if (i = loose_match ((unsigned char *) p1, ln,
-             (unsigned char *) SR, ER + 1 - SR,
-             CR->info.repeat.ins,
-             CR->info.repeat.del,
-             CR->info.repeat.mis, -1, &j, 0,
-             &(CR->info.repeat.ins_left))) {
+             (unsigned char *) seq_start, seq_end + 1 - seq_start,
+             current->info.repeat.ins,
+             current->info.repeat.del,
+             current->info.repeat.mis, -1, &j, 0,
+             &(current->info.repeat.ins_left))) {
             i--;
-            CR->hit = SR;
-            if ((CR->hit = SR) < last) {
-              CR->BR = BR;
-              BR = CR;
+            current->hit = seq_start;
+            if ((current->hit = seq_start) < last) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
             }
-            SR += i;
+            seq_start += i;
             success = 1;
             break;
           }
@@ -616,11 +628,11 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case INV_REP_PUNIT:
-          pu1 = names[CR->info.repeat.of];
+          pu1 = names[current->info.repeat.of];
           p1 = pu1->hit;
 
           if (!(ln = pu1->mlen)) {
-            CR->hit = SR;
+            current->hit = seq_start;
             success = 1;
             break;
           }
@@ -636,18 +648,18 @@ pattern_match (pu, start, end, hits, first, BR1)
           }
 
           if (i = loose_match ((unsigned char *) p3, ln,
-             (unsigned char *) SR, ER + 1 - SR,
-             CR->info.repeat.ins,
-             CR->info.repeat.del,
-             CR->info.repeat.mis, -1, &j, 0,
-             &(CR->info.repeat.ins_left))) {
+             (unsigned char *) seq_start, seq_end + 1 - seq_start,
+             current->info.repeat.ins,
+             current->info.repeat.del,
+             current->info.repeat.mis, -1, &j, 0,
+             &(current->info.repeat.ins_left))) {
             i--;
-            CR->hit = SR;
-            if ((CR->hit = SR) < last) {
-              CR->BR = BR;
-              BR = CR;
+            current->hit = seq_start;
+            if ((current->hit = seq_start) < last) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
             }
-            SR += i;
+            seq_start += i;
             success = 1;
             break;
           }
@@ -655,28 +667,28 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case SIM_PUNIT:
-          last = ER + 1 + CR->info.sim.ins - CR->info.sim.len;
-          if ((last > SR) && CR->anchored)
-            last = SR;
-          p1 = CR->info.sim.code;
-          ln = CR->info.sim.len - 1;
-          while (SR <= last) {
-            if (i = loose_match ((unsigned char *) CR->info.sim.code,
-               CR->info.sim.len,
-               (unsigned char *) SR, ER + 1 - SR,
-               CR->info.sim.ins,
-               CR->info.sim.del, CR->info.sim.mis, -1, &j, 0,
-               &(CR->info.sim.ins_left))) {
+          last = seq_end + 1 + current->info.sim.ins - current->info.sim.len;
+          if ((last > seq_start) && current->anchored)
+            last = seq_start;
+          p1 = current->info.sim.code;
+          ln = current->info.sim.len - 1;
+          while (seq_start <= last) {
+            if (i = loose_match ((unsigned char *) current->info.sim.code,
+               current->info.sim.len,
+               (unsigned char *) seq_start, seq_end + 1 - seq_start,
+               current->info.sim.ins,
+               current->info.sim.del, current->info.sim.mis, -1, &j, 0,
+               &(current->info.sim.ins_left))) {
               i--;
-              if ((CR->hit = SR) < last) {
-                CR->BR = BR;
-                BR = CR;
+              if ((current->hit = seq_start) < last) {
+                current->BR = tmp_backtrack_punit;
+                tmp_backtrack_punit = current;
               }
-              SR += i;
+              seq_start += i;
               success=1;
               break;
             }
-            SR++;
+            seq_start++;
           }
           if(success)
             break;
@@ -684,14 +696,14 @@ pattern_match (pu, start, end, hits, first, BR1)
           break;
 
         case WEIGHT_PUNIT:
-          last = ER + 1 - CR->info.wvec.len;
-          if ((last > SR) && CR->anchored)
-            last = SR;
-          pv1 = CR->info.wvec.vec;
-          ln = CR->info.wvec.len;
-          while (SR <= last) {
-            if (CR->info.wvec.tupsz == 4) {
-              for (pv2 = (wv_t *) pv1, p1 = SR, i = ln, wval = 0; i; i--, pv2++) {
+          last = seq_end + 1 - current->info.wvec.len;
+          if ((last > seq_start) && current->anchored)
+            last = seq_start;
+          pv1 = current->info.wvec.vec;
+          ln = current->info.wvec.len;
+          while (seq_start <= last) {
+            if (current->info.wvec.tupsz == 4) {
+              for (pv2 = (wv_t *) pv1, p1 = seq_start, i = ln, wval = 0; i; i--, pv2++) {
                 switch (*(p1++) & 15) {
                 case A_BIT:
                   wval += pv2->aw;
@@ -743,8 +755,8 @@ pattern_match (pu, start, end, hits, first, BR1)
               }
             }
             else {  //    * handling 20-tuples  (or 21-tuples) *
-              for (pv3 = pv1, p1 = SR, i = ln, wval = 0;
-                   i; i--, pv3 += CR->info.wvec.tupsz) {
+              for (pv3 = pv1, p1 = seq_start, i = ln, wval = 0;
+                   i; i--, pv3 += current->info.wvec.tupsz) {
                 switch (*(p1++)) {
                 case 'A':
                   wval += *(pv3 + 0);
@@ -807,38 +819,38 @@ pattern_match (pu, start, end, hits, first, BR1)
                   wval += *(pv3 + 19);
                   break;
                 default:
-                  if (CR->info.wvec.tupsz > 20)
+                  if (current->info.wvec.tupsz > 20)
                     wval += *(pv3 + 20);
                   break;
                 }
               }
             }
-            if ((wval > CR->info.wvec.cutoff) && (wval < CR->info.wvec.maxwt)) {
+            if ((wval > current->info.wvec.cutoff) && (wval < current->info.wvec.maxwt)) {
               break;
             }
-            SR++;
+            seq_start++;
           }
-          if (SR > last) {
+          if (seq_start > last) {
             backtrack = 1;
             break;
           } else {
-            if ((CR->hit = SR) < last) {
-              CR->BR = BR;
-              BR = CR;
+            if ((current->hit = seq_start) < last) {
+              current->BR = tmp_backtrack_punit;
+              tmp_backtrack_punit = current;
             }
-            SR += CR->info.wvec.len;
+            seq_start += current->info.wvec.len;
             success = 1;
             break;
           }
           break;
 
         case OR_PUNIT:
-          CR->BR = BR;
-          BR = CR;
-          CR->info.or.SR = SR;
-          CR->hit = SR;
-          CR->info.or.alt = 1;
-          CR = CR->info.or.or1;
+          current->BR = tmp_backtrack_punit;
+          tmp_backtrack_punit = current;
+          current->info.or.SR = seq_start;
+          current->hit = seq_start;
+          current->info.or.alt = 1;
+          current = current->info.or.or1;
           try_again = 1;
           break;
       }
@@ -853,25 +865,25 @@ pattern_match (pu, start, end, hits, first, BR1)
     if(backtrack){
       backtrack_again = 0;
 
-      if (!BR)
+      if (!tmp_backtrack_punit)
         return 0;
       else {
-        CR = BR;
-        BR = CR->BR;
-        SR = CR->hit;
-        switch (CR->type) {
+        current = tmp_backtrack_punit;
+        tmp_backtrack_punit = current->BR;
+        seq_start = current->hit;
+        switch (current->type) {
           case RANGE_PUNIT:
-            if ((CR->info.range.nxt <= CR->info.range.min + CR->info.range.width) &&
-                (SR + CR->info.range.nxt - 1 <= ER)) {
-              SR = SR + CR->info.range.nxt++;
-              BR = CR;
+            if ((current->info.range.nxt <= current->info.range.min + current->info.range.width) &&
+                (seq_start + current->info.range.nxt - 1 <= seq_end)) {
+              seq_start = seq_start + current->info.range.nxt++;
+              tmp_backtrack_punit = current;
               success = 1;
               break;
             }
-            else if (((++CR->hit + CR->info.range.min - 1) <= ER) && !CR->anchored) {
-              CR->info.range.nxt = CR->info.range.min + 1;
-              SR = CR->hit + CR->info.range.min;
-              BR = CR;
+            else if (((++current->hit + current->info.range.min - 1) <= seq_end) && !current->anchored) {
+              current->info.range.nxt = current->info.range.min + 1;
+              seq_start = current->hit + current->info.range.min;
+              tmp_backtrack_punit = current;
               success = 1;
               break;
             }
@@ -882,10 +894,10 @@ pattern_match (pu, start, end, hits, first, BR1)
             break;
 
           case INV_REP_PUNIT:
-            if (CR->info.repeat.ins_left && first_backtrack && 0) {
-              CR->info.repeat.ins_left--;
-              CR->mlen--;
-              SR = CR->hit + CR->mlen;
+            if (current->info.repeat.ins_left && first_backtrack && 0) {
+              current->info.repeat.ins_left--;
+              current->mlen--;
+              seq_start = current->hit + current->mlen;
               success = 1;
               break;
             } else {
@@ -893,10 +905,10 @@ pattern_match (pu, start, end, hits, first, BR1)
               break;
             }
           case REPEAT_PUNIT:
-            if (CR->info.repeat.ins_left && first_backtrack && 0) {
-              CR->info.repeat.ins_left--;
-              CR->mlen--;
-              SR = CR->hit + CR->mlen;
+            if (current->info.repeat.ins_left && first_backtrack && 0) {
+              current->info.repeat.ins_left--;
+              current->mlen--;
+              seq_start = current->hit + current->mlen;
               success = 1;
               break;
             } else {
@@ -904,10 +916,10 @@ pattern_match (pu, start, end, hits, first, BR1)
               break;
             }
           case COMPL_PUNIT:
-            if (CR->info.compl.ins_left && first_backtrack && 0) {
-              CR->info.compl.ins_left--;
-              CR->mlen--;
-              SR = CR->hit + CR->mlen;
+            if (current->info.compl.ins_left && first_backtrack && 0) {
+              current->info.compl.ins_left--;
+              current->mlen--;
+              seq_start = current->hit + current->mlen;
               success = 1;
               break;
             } else {
@@ -915,10 +927,10 @@ pattern_match (pu, start, end, hits, first, BR1)
               break;
             }
           case SIM_PUNIT:
-            if (CR->info.sim.ins_left && first_backtrack) {
-              CR->info.sim.ins_left--;
-              CR->mlen--;
-              SR = CR->hit + CR->mlen;
+            if (current->info.sim.ins_left && first_backtrack) {
+              current->info.sim.ins_left--;
+              current->mlen--;
+              seq_start = current->hit + current->mlen;
               success = 1;
               break;
             }
@@ -926,19 +938,19 @@ pattern_match (pu, start, end, hits, first, BR1)
           case ANY_PUNIT:
           case EXACT_PUNIT:
           case WEIGHT_PUNIT:
-            SR++;
+            seq_start++;
             try=1;
             break;
 
           case OR_PUNIT:
-            if (CR->info.or.alt == 1) {
-              CR->info.or.alt = 2;
-              CR = CR->info.or.or2;
+            if (current->info.or.alt == 1) {
+              current->info.or.alt = 2;
+              current = current->info.or.or2;
               try=1;
               break;
             }
-            else if ((!CR->anchored) && (CR->info.or.alt == 2)) {
-              SR++;
+            else if ((!current->anchored) && (current->info.or.alt == 2)) {
+              seq_start++;
               try=1;
               break;
             }
@@ -958,10 +970,10 @@ pattern_match (pu, start, end, hits, first, BR1)
 
     //SUCESS segment
     if(success){
-      CR->mlen = SR - CR->hit;
-      pu1=next_punit(CR);
+      current->mlen = seq_start - current->hit;
+      pu1=next_punit(current);
       if (pu1) {
-        CR = pu1;
+        current = pu1;
         try = 1;
       } else {
         leave = 1;
@@ -971,21 +983,21 @@ pattern_match (pu, start, end, hits, first, BR1)
   }
 
   //LEAVE segment
-  i = collect_hits (CR, revhits);
+  i = collect_hits (current, revhits);
   for (j = 0; i--; j++)
     hits[j] = revhits[i];
-  hits[j] = SR;
-  *BR1 = BR;
+  hits[j] = seq_start;
+  *backtrack_punit = tmp_backtrack_punit;
   return j;
 }
 
 /**
- * @brief 
+ * @brief Writes the hits of the matches to revhits in reverse order.
  *
- * @param pu
- * @param revhits
+ * @param pu The last pattern unit of the pattern.
+ * @param revhits Where the reported hits will be placed.
  *
- * @return
+ * @return How many hits there are.
  */
 int
 collect_hits (pu, revhits)
@@ -1071,7 +1083,7 @@ rev_compl_data (rule_set, data, len, result)
  * If a maximum number of insertions and deletions is specified, loose_match keeps track of a stack
  * of states, where a new state is added each time a choice is made.
  * When insertions and/or deletions are allowed, we start by checking if we have an exact match
- * of the chars at one_data and two_data. If we do, both pointers are incremented and we continue
+ * of the chars at pat_data and seq_data. If we do, both pointers are incremented and we continue
  * seaching for a new match.
  *
  * If not, we start by using our up the allowed number of mismatches and saving a state depending
@@ -1088,10 +1100,10 @@ rev_compl_data (rule_set, data, len, result)
  * If a point is reached where no possible match could be found, the most recent state is popped
  * from the stack and the choice set by next_choice is then tried instead.
  *
- * @param one_data Pointer to the pattern to be matched against the data region.
- * @param one_len Length of the pattern
- * @param two_data The data region to be matched by one_data
- * @param two_len Length of the data region
+ * @param pat_data Pointer to the pattern to be matched against the data region.
+ * @param pat_len Length of the pattern
+ * @param seq_data The data region to be matched by pat_data
+ * @param seq_len Length of the data region
  * @param max_ins Maximum number of insertions allowed
  * @param max_del Maximum number of deletions allowed
  * @param max_mis Maximum number of mismatches allowed
@@ -1104,17 +1116,17 @@ rev_compl_data (rule_set, data, len, result)
  * @return The length of the least amount of two_data that could be matched.
  */
 int
-loose_match (one_data, one_len, two_data, two_len,
+loose_match (pat_data, pat_len, seq_data, seq_len,
        max_ins, max_del, max_mis, rule_set, match_range, compl_flag, ins_left)
-     unsigned char *one_data, *two_data;
-     int one_len, two_len;
+     unsigned char *pat_data, *seq_data;
+     int pat_len, seq_len;
      int max_ins, max_del, max_mis;
      int *match_range;
      int compl_flag, rule_set;
      int *ins_left;
 {
   unsigned char result[MAX_CODES];
-  unsigned char *start_two_data = two_data;
+  unsigned char *start_seq_data = seq_data;
   int i, nxtent, match;
   struct stackent {
     unsigned char *p1, *p2;
@@ -1125,42 +1137,42 @@ loose_match (one_data, one_len, two_data, two_len,
   match = 0;
   if (compl_flag) {
     /* FIX: 4/25/92 RAO; complements of ambiguous regions fail */
-    for (i = 0; i < one_len; i++)
-      if (!KnownChar (*(one_data + i) & 15))
+    for (i = 0; i < pat_len; i++)
+      if (!KnownChar (*(pat_data + i) & 15))
         return 0;
-    rev_compl_data (rule_set, one_data, one_len, result);
-    one_data = result;
+    rev_compl_data (rule_set, pat_data, pat_len, result);
+    pat_data = result;
   }
   /* special-case for ins=del=0 */
   if ((max_ins == 0) && (max_del == 0)) {
-    if (one_len > two_len) {
+    if (pat_len > seq_len) {
       return 0;
     }
-    for (i = one_len; i >= 1; i--) {
-      if (!KnownChar ((*two_data) & 15) || (!ExMatches (rule_set, *two_data, *one_data) && (--max_mis < 0)))
+    for (i = pat_len; i >= 1; i--) {
+      if (!KnownChar ((*seq_data) & 15) || (!ExMatches (rule_set, *seq_data, *pat_data) && (--max_mis < 0)))
         return 0;
       else {
-        two_data++;
-        one_data++;
+        seq_data++;
+        pat_data++;
       }
     }
     *ins_left = 0;
-    return (two_data - start_two_data) + 1;
+    return (seq_data - start_seq_data) + 1;
   }
 
   nxtent = 0;
-  while (two_len || nxtent) {
-    if (two_len && one_len && KnownChar ((*two_data) & 15) &&
-                  ExMatches (rule_set, *two_data, *one_data)) {
-      two_data++;
-      one_data++;
-      two_len--;
-      if (!(--one_len)){
+  while (seq_len || nxtent) {
+    if (seq_len && pat_len && KnownChar ((*seq_data) & 15) &&
+                  ExMatches (rule_set, *seq_data, *pat_data)) {
+      seq_data++;
+      pat_data++;
+      seq_len--;
+      if (!(--pat_len)){
         match = 1;
         break;
       }
     }
-    else if (max_mis && (one_len >= 1) && (two_len >= 1)) {
+    else if (max_mis && (pat_len >= 1) && (seq_len >= 1)) {
       if (max_ins) {
         Stack (1);
       }
@@ -1168,41 +1180,41 @@ loose_match (one_data, one_len, two_data, two_len,
         Stack (2);
       }
       max_mis--;
-      one_data++;
-      two_data++;
-      one_len--;
-      two_len--;
-      if (!one_len) {
+      pat_data++;
+      seq_data++;
+      pat_len--;
+      seq_len--;
+      if (!pat_len) {
         match = 1;
         break;
       }
     }
-    else if ((max_ins) && (one_len >= 1)) {
-      if ((max_del) && (two_len >= 1)) {
+    else if ((max_ins) && (pat_len >= 1)) {
+      if ((max_del) && (seq_len >= 1)) {
         Stack (2);
       }
       max_ins--;
-      one_data++;
-      one_len--;
-      if (!one_len){
+      pat_data++;
+      pat_len--;
+      if (!pat_len){
         match = 1;
         break;
       }
     }
-    else if ((max_del) && (two_len >= 1)) {
+    else if ((max_del) && (seq_len >= 1)) {
       max_del--;
-      two_data++;
-      two_len--;
-      if (!one_len){
+      seq_data++;
+      seq_len--;
+      if (!pat_len){
         match = 1;
         break;
       }
     }
     else if (nxtent--) {
-      one_data = stack[nxtent].p1;
-      two_data = stack[nxtent].p2;
-      one_len = stack[nxtent].n1;
-      two_len = stack[nxtent].n2;
+      pat_data = stack[nxtent].p1;
+      seq_data = stack[nxtent].p2;
+      pat_len = stack[nxtent].n1;
+      seq_len = stack[nxtent].n2;
       max_mis = stack[nxtent].mis;
       max_ins = stack[nxtent].ins;
       max_del = stack[nxtent].del;
@@ -1211,18 +1223,18 @@ loose_match (one_data, one_len, two_data, two_len,
         if (max_del)
           stack[nxtent++].next_choice = 2;
         max_ins--;
-        one_data++;
-        one_len--;
-        if (!one_len){
+        pat_data++;
+        pat_len--;
+        if (!pat_len){
           match = 1;
           break;
         }
       }
       else {
         max_del--;
-        two_data++;
-        two_len--;
-        if (!one_len){
+        seq_data++;
+        seq_len--;
+        if (!pat_len){
           match = 1;
           break;
         }
@@ -1231,13 +1243,13 @@ loose_match (one_data, one_len, two_data, two_len,
     else
       return 0;
   }
-  if (max_ins >= one_len && !match) {
-    max_ins -= one_len;
+  if (max_ins >= pat_len && !match) {
+    max_ins -= pat_len;
     match = 1;
   }
   if (match) {
     *ins_left = max_ins;
-    return (two_data - start_two_data) + 1;
+    return (seq_data - start_seq_data) + 1;
   }
   return 0;
 }
